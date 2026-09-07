@@ -1,136 +1,160 @@
 import tkinter as tk
-from contours import VitalContour, CognitiveContour, SocialContour
+import numpy as np
 from arbiter import Arbiter
 
-# Создаём контуры и арбитра
-vh = VitalContour()
-ve = CognitiveContour()
-vs = SocialContour()
-arbiter = Arbiter()
+# Матрица весов: 10 входов -> 3 контура
+weights = np.array([
+    [100, 0, 0],
+    [90, 0, 0],
+    [95, 0, 0],
+    [0, 45, 0],
+    [0, 80, 0],
+    [0, 60, 0],
+    [0, 80, 0],
+    [0, 85, 0],
+    [0, 0, 60],
+    [0, 0, 65],
+])
 
-# Создаём главное окно
+# Названия событий
+labels = [
+    "Пешеход", "Перегрев", "Давление масла",
+    "Красный свет", "Знак СТОП", "Потеряна разметка", "Затор", "Регулировщик",
+    "Водитель газ", "Водитель тормоз"
+]
+
+# Действия для каждого события, если оно победило
+event_actions = {
+    "Пешеход": "ЭКСТРЕННОЕ ТОРМОЖЕНИЕ!",
+    "Перегрев": "Остановка из-за перегрева.",
+    "Давление масла": "Остановка из-за давления масла.",
+    "Красный свет": "Остановка перед светофором.",
+    "Знак СТОП": "Полная остановка у знака «Стоп».",
+    "Потеряна разметка": "Снижение скорости, ориентирование по краю дороги.",
+    "Затор": "Остановка перед затором.",
+    "Регулировщик": "Выполнение команды регулировщика.",
+    "Водитель газ": "Ускорение.",
+    "Водитель тормоз": "Торможение.",
+}
+
 window = tk.Tk()
-window.title("Трёхконтурный автопилот")
+window.title("Нейроарбитр")
 window.geometry("700x650")
 
-# Заголовки блоков
 tk.Label(window, text="Безопасность (V_h)", font=("Arial", 10, "bold")).grid(row=0, column=0)
-tk.Label(window, text="Навигация и правила (V_e)", font=("Arial", 10, "bold")).grid(row=0, column=1)
-tk.Label(window, text="Люди и сигналы (V_s)", font=("Arial", 10, "bold")).grid(row=0, column=2)
+tk.Label(window, text="Навигация (V_e)", font=("Arial", 10, "bold")).grid(row=0, column=1)
+tk.Label(window, text="Социальное (V_s)", font=("Arial", 10, "bold")).grid(row=0, column=2)
 
-# Переменные для чекбоксов
-var_pedestrian = tk.BooleanVar()
-var_overheat = tk.BooleanVar()
-var_oilpressure = tk.BooleanVar()
+vars_list = []
+columns = [0, 0, 0, 1, 1, 1, 1, 1, 2, 2]
+rows = [1, 2, 3, 1, 2, 3, 4, 5, 1, 2]
 
-var_redlight = tk.BooleanVar()
-var_stopsign = tk.BooleanVar()
-var_nomark = tk.BooleanVar()
-var_traffic = tk.BooleanVar()
-var_officer = tk.BooleanVar()
+for i, text in enumerate(labels):
+    var = tk.BooleanVar()
+    vars_list.append(var)
+    tk.Checkbutton(window, text=text, variable=var).grid(row=rows[i], column=columns[i], sticky="w")
 
-var_driver_gas = tk.BooleanVar()
-var_driver_brake = tk.BooleanVar()
-var_other_signal = tk.BooleanVar()
-
-# Чекбоксы V_h
-tk.Checkbutton(window, text="Пешеход", variable=var_pedestrian).grid(row=1, column=0, sticky="w")
-tk.Checkbutton(window, text="Перегрев (>120)", variable=var_overheat).grid(row=2, column=0, sticky="w")
-tk.Checkbutton(window, text="Давление масла <0.5", variable=var_oilpressure).grid(row=3, column=0, sticky="w")
-
-# Чекбоксы V_e
-tk.Checkbutton(window, text="Красный свет", variable=var_redlight).grid(row=1, column=1, sticky="w")
-tk.Checkbutton(window, text="Знак «Стоп»", variable=var_stopsign).grid(row=2, column=1, sticky="w")
-tk.Checkbutton(window, text="Потеряна разметка", variable=var_nomark).grid(row=3, column=1, sticky="w")
-tk.Checkbutton(window, text="Затор впереди", variable=var_traffic).grid(row=4, column=1, sticky="w")
-tk.Checkbutton(window, text="Регулировщик", variable=var_officer).grid(row=5, column=1, sticky="w")
-
-# Чекбоксы V_s
-tk.Checkbutton(window, text="Водитель жмёт газ", variable=var_driver_gas).grid(row=1, column=2, sticky="w")
-tk.Checkbutton(window, text="Водитель жмёт тормоз", variable=var_driver_brake).grid(row=2, column=2, sticky="w")
-tk.Checkbutton(window, text="Сигналы других машин", variable=var_other_signal).grid(row=3, column=2, sticky="w")
-
-# Лог
 log_text = tk.Text(window, height=15, width=80)
 log_text.grid(row=6, column=0, columnspan=3, pady=10)
 
+arbiter = Arbiter()
+
 def update():
-    # Очищаем все контуры
-    vh.clear_events()
-    ve.clear_events()
-    vs.clear_events()
+    inputs = np.array([1 if v.get() else 0 for v in vars_list])
+    contributions = inputs[:, None] * weights
+    raw = np.max(contributions, axis=0)
+    base = np.array([10, 40, 10])
+    priorities = np.maximum(base, raw)
 
-    # События V_h
-    if var_pedestrian.get():
-        vh.add_event("Пешеход", 100)
-    if var_overheat.get():
-        vh.add_event("Перегрев", 90)
-    if var_oilpressure.get():
-        vh.add_event("Давление масла", 95)
+    # Каждый раз — новый выбор
+    arbiter.current_winner = None
 
-    # События V_e
-    if var_redlight.get():
-        ve.add_event("Красный свет", 45)
-    if var_stopsign.get():
-        ve.add_event("Знак СТОП", 50)
-    if var_nomark.get():
-        ve.add_event("Потеряна разметка", 60)
-    if var_traffic.get():
-        ve.add_event("Затор", 80)
-    if var_officer.get():
-        ve.add_event("Регулировщик", 70)
+    class FakeContour:
+        def __init__(self, name, priority):
+            self.name = name
+            self.current_priority = int(priority)
 
-    # События V_s
-    if var_driver_gas.get():
-        vs.add_event("Водитель: газ", 60)
-    if var_driver_brake.get():
-        vs.add_event("Водитель: тормоз", 65)
-    if var_other_signal.get():
-        vs.add_event("Сигналы других машин", 55)
+    vh = FakeContour("V_h", priorities[0])
+    ve = FakeContour("V_e", priorities[1])
+    vs = FakeContour("V_s", priorities[2])
 
-    # Решение арбитра
     winner, interrupt = arbiter.decide([vh, ve, vs])
 
-    # Вывод в лог
+    # Определяем главное событие победившего контура
+    winner_idx = {"V_h": 0, "V_e": 1, "V_s": 2}[winner.name]
+    active_indices = [i for i, v in enumerate(vars_list) if v.get()]
+    top_event = None
+    top_value = -1
+    for i in active_indices:
+        val = weights[i][winner_idx]
+        if val > top_value:
+            top_value = val
+            top_event = labels[i]
+
+    # Логи
     log_text.insert(tk.END, "\n=== Обновление ===\n")
-    log_text.insert(tk.END, vh.status() + "\n")
-    log_text.insert(tk.END, ve.status() + "\n")
-    log_text.insert(tk.END, vs.status() + "\n")
+    active_events = [labels[i] for i in active_indices]
+    if active_events:
+        log_text.insert(tk.END, "События: " + ", ".join(active_events) + "\n")
+    else:
+        log_text.insert(tk.END, "События: нет\n")
 
-    # Описание действия
-    action = ""
-    if winner.name == "V_h":
-        action = "ЭКСТРЕННОЕ ТОРМОЖЕНИЕ! Автомобиль резко остановлен!"
-    elif winner.name == "V_e":
-        if var_officer.get():
-            action = "Автомобиль выполняет команду регулировщика."
-        elif var_traffic.get():
-            action = "Автомобиль останавливается перед затором."
-        elif var_redlight.get():
-            action = "Автомобиль останавливается перед красным светофором."
-        elif var_stopsign.get():
-            action = "Автомобиль выполняет полную остановку у знака «Стоп»."
-        elif var_nomark.get():
-            action = "Автомобиль снижает скорость и ориентируется по краю дороги."
-        else:
-            action = "Автомобиль продолжает движение по маршруту."
-    elif winner.name == "V_s":
-        if var_driver_gas.get() and not var_driver_brake.get():
-            action = "Водитель жмёт газ, автомобиль ускоряется."
-        elif var_driver_brake.get():
-            action = "Водитель жмёт тормоз, автомобиль останавливается."
-        elif var_other_signal.get():
-            action = "Автомобиль реагирует на сигналы других машин."
-        else:
-            action = "Автомобиль следует социальным сигналам."
+    log_text.insert(tk.END, f"V_h: {vh.current_priority}  V_e: {ve.current_priority}  V_s: {vs.current_priority}\n")
+    log_text.insert(tk.END, f"ПОБЕДИЛ: {winner.name}\n")
 
-    log_text.insert(tk.END, f"ДЕЙСТВИЕ: {action}\n")
+    if top_event:
+        log_text.insert(tk.END, f"ГЛАВНОЕ СОБЫТИЕ: {top_event}\n")
+        log_text.insert(tk.END, f"ДЕЙСТВИЕ: {event_actions[top_event]}\n")
+    else:
+        log_text.insert(tk.END, "ДЕЙСТВИЕ: Автомобиль движется по маршруту.\n")
+
+    if interrupt:
+        log_text.insert(tk.END, f"({interrupt})\n")
+    log_text.see(tk.END)
+    class FakeContour:
+        def __init__(self, name, priority):
+            self.name = name
+            self.current_priority = int(priority)
+
+    vh = FakeContour("V_h", priorities[0])
+    ve = FakeContour("V_e", priorities[1])
+    vs = FakeContour("V_s", priorities[2])
+
+    winner, interrupt = arbiter.decide([vh, ve, vs])
+
+    # Определяем главное событие победившего контура
+    winner_idx = {"V_h": 0, "V_e": 1, "V_s": 2}[winner.name]
+    active_indices = [i for i, v in enumerate(vars_list) if v.get()]
+    top_event = None
+    top_value = -1
+    for i in active_indices:
+        val = weights[i][winner_idx]
+        if val > top_value:
+            top_value = val
+            top_event = labels[i]
+
+    # Логи
+    log_text.insert(tk.END, "\n=== Обновление ===\n")
+    active_events = [labels[i] for i in active_indices]
+    if active_events:
+        log_text.insert(tk.END, "События: " + ", ".join(active_events) + "\n")
+    else:
+        log_text.insert(tk.END, "События: нет\n")
+
+    log_text.insert(tk.END, f"V_h: {vh.current_priority}  V_e: {ve.current_priority}  V_s: {vs.current_priority}\n")
+    log_text.insert(tk.END, f"ПОБЕДИЛ: {winner.name}\n")
+
+    if top_event:
+        log_text.insert(tk.END, f"ГЛАВНОЕ СОБЫТИЕ: {top_event}\n")
+        log_text.insert(tk.END, f"ДЕЙСТВИЕ: {event_actions[top_event]}\n")
+    else:
+        log_text.insert(tk.END, "ДЕЙСТВИЕ: Автомобиль движется по маршруту.\n")
+
     if interrupt:
         log_text.insert(tk.END, f"({interrupt})\n")
     log_text.see(tk.END)
 
 
-# Функция для копирования
 def copy_text(event):
     try:
         selected = log_text.get("sel.first", "sel.last")
@@ -139,7 +163,6 @@ def copy_text(event):
     except tk.TclError:
         pass
 
-# Контекстное меню
 menu = tk.Menu(window, tearoff=0)
 menu.add_command(label="Копировать", command=lambda: copy_text(None))
 
@@ -153,7 +176,8 @@ def loop():
     update()
     window.after(3000, loop)
 
-
+loop()
+window.mainloop()
 loop()
 
 window.mainloop()
