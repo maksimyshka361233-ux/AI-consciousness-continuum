@@ -2,18 +2,17 @@ import tkinter as tk
 import numpy as np
 from arbiter import Arbiter
 
-# Матрица весов: 10 входов -> 3 контура
 weights = np.array([
-    [100, 0, 0],   # Пешеход
-    [90, 0, 0],    # Перегрев
-    [95, 0, 0],    # Давление масла
-    [0, 45, 0],    # Красный свет
-    [0, 80, 0],    # Знак СТОП
-    [0, 60, 0],    # Потеряна разметка
-    [0, 80, 0],    # Затор
-    [0, 85, 0],    # Регулировщик
-    [0, 0, 60],    # Водитель газ
-    [0, 0, 65],    # Водитель тормоз
+    [100, 0,   0],   # Пешеход → V_h
+    [90,  0,   0],   # Перегрев → V_h
+    [95,  0,   0],   # Давление масла → V_h
+    [0,   70,  0],   # Красный свет → V_e
+    [0,   0,   80],  # Знак СТОП → V_s
+    [0,   60,  0],   # Потеряна разметка → V_e
+    [0,   88,  0],   # Затор → V_e
+    [0,   0,   70],  # Регулировщик → V_s
+    [0,   0,   60],  # Водитель газ → V_s
+    [0,   0,   65],  # Водитель тормоз → V_s
 ])
 
 labels = [
@@ -36,30 +35,30 @@ event_actions = {
 }
 
 window = tk.Tk()
-window.title("Нейроарбитр")
-window.geometry("700x650")
+window.title("Нейроарбитр — трёхконтурная архитектура")
+window.geometry("750x700")
 
 tk.Label(window, text="Безопасность (V_h)", font=("Arial", 10, "bold")).grid(row=0, column=0)
 tk.Label(window, text="Навигация (V_e)", font=("Arial", 10, "bold")).grid(row=0, column=1)
 tk.Label(window, text="Социальное (V_s)", font=("Arial", 10, "bold")).grid(row=0, column=2)
 
 vars_list = []
-columns = [0, 0, 0, 1, 1, 1, 1, 1, 2, 2]
-rows = [1, 2, 3, 1, 2, 3, 4, 5, 1, 2]
+columns = [0, 0, 0, 1, 2, 1, 1, 2, 2, 2]
+rows    = [1, 2, 3, 1, 1, 2, 3, 2, 3, 4]
 
 for i, text in enumerate(labels):
     var = tk.BooleanVar()
     vars_list.append(var)
     tk.Checkbutton(window, text=text, variable=var).grid(row=rows[i], column=columns[i], sticky="w")
 
-log_text = tk.Text(window, height=15, width=80)
-log_text.grid(row=6, column=0, columnspan=3, pady=10)
+log_text = tk.Text(window, height=18, width=85)
+log_text.grid(row=7, column=0, columnspan=3, pady=10)
 
-# Цветные теги
 log_text.tag_config("interrupt", foreground="red", font=("Arial", 10, "bold"))
 log_text.tag_config("winner", foreground="blue", font=("Arial", 10, "bold"))
 log_text.tag_config("normal", foreground="black")
 log_text.tag_config("hysteresis", foreground="#888888")
+log_text.tag_config("modulation", foreground="#aa6600", font=("Arial", 10, "bold"))
 
 arbiter = Arbiter()
 
@@ -70,9 +69,6 @@ def update():
     base = np.array([10, 40, 10])
     priorities = np.maximum(base, raw)
 
-    # Каждый раз — новый выбор
-    arbiter.current_winner = None
-
     class FakeContour:
         def __init__(self, name, priority):
             self.name = name
@@ -82,7 +78,7 @@ def update():
     ve = FakeContour("V_e", priorities[1])
     vs = FakeContour("V_s", priorities[2])
 
-    winner, interrupt = arbiter.decide([vh, ve, vs])
+    winner, note = arbiter.decide([vh, ve, vs])
 
     winner_idx = {"V_h": 0, "V_e": 1, "V_s": 2}[winner.name]
     active_indices = [i for i, v in enumerate(vars_list) if v.get()]
@@ -110,8 +106,15 @@ def update():
     else:
         log_text.insert(tk.END, "ДЕЙСТВИЕ: Автомобиль движется по маршруту.\n", "normal")
 
-    if interrupt:
-        log_text.insert(tk.END, f"⚠ {interrupt}\n", "interrupt")
+    if note:
+        if "ПРЕРЫВАНИЕ" in note:
+            log_text.insert(tk.END, f"⚠ {note}\n", "interrupt")
+        elif "Модуляция" in note:
+            log_text.insert(tk.END, f"⚡ {note}\n", "modulation")
+        elif "Гистерезис" in note:
+            log_text.insert(tk.END, f"ℹ {note}\n", "hysteresis")
+        else:
+            log_text.insert(tk.END, f"{note}\n", "normal")
     log_text.see(tk.END)
 
 
@@ -131,12 +134,10 @@ def show_menu(event):
 
 log_text.bind("<Button-3>", show_menu)
 
-
 def loop():
     update()
     window.after(3000, loop)
 
 loop()
 window.mainloop()
-
 window.mainloop()
